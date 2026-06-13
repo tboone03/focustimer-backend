@@ -26,6 +26,9 @@ public class User {
     @Builder.Default
     private long xpTotal = 0L;
 
+    @Column(name = "display_name", length = 100)
+    private String displayName;
+
     @Column(name = "is_live_status_visible")
     @Builder.Default
     private boolean isLiveStatusVisible = true;
