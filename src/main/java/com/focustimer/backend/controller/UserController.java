@@ -31,7 +31,11 @@ public class UserController {
             user.setDisplayName(req.getDisplayName());
         }
         if (req.getEmail() != null && !req.getEmail().isBlank()) {
-            user.setEmail(req.getEmail());
+            String newEmail = req.getEmail().trim();
+            if (!newEmail.equals(user.getEmail()) && userRepository.existsByEmail(newEmail)) {
+                throw new IllegalArgumentException("Email is already in use");
+            }
+            user.setEmail(newEmail);
         }
         if (req.getLiveStatusVisible() != null) {
             user.setLiveStatusVisible(req.getLiveStatusVisible());

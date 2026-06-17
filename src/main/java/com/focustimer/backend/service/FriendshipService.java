@@ -10,10 +10,12 @@ import com.focustimer.backend.repository.FocusStatusRepository;
 import com.focustimer.backend.repository.FriendshipRepository;
 import com.focustimer.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +24,7 @@ public class FriendshipService {
     private final UserRepository userRepository;
     private final FriendshipRepository friendshipRepository;
     private final FocusStatusRepository focusStatusRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Transactional
     public void sendRequest(String requesterUsername, Long addresseeId) {
@@ -38,6 +41,10 @@ public class FriendshipService {
                 .addressee(addressee)
                 .status(FriendshipStatus.PENDING)
                 .build());
+        // notify the addressee that they have a new request
+        messagingTemplate.convertAndSend(
+                "/topic/friends/" + addresseeId + "/requests",
+                Map.of("from", requester.getUsername(), "requesterId", requester.getId()));
     }
 
     @Transactional
@@ -48,6 +55,12 @@ public class FriendshipService {
             throw new SecurityException("Not your request");
         f.setStatus(accept ? FriendshipStatus.ACCEPTED : FriendshipStatus.DECLINED);
         friendshipRepository.save(f);
+        if (accept) {
+            // notify both users that a new friendship was accepted
+            messagingTemplate.convertAndSend(
+                    "/topic/friends/" + f.getRequester().getId() + "/requests",
+                    Map.of("accepted", true, "by", f.getAddressee().getUsername()));
+        }
     }
 
     @Transactional(readOnly = true)

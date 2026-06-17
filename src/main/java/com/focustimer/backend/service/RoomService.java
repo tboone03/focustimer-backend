@@ -10,6 +10,7 @@ import com.focustimer.backend.repository.RoomMemberRepository;
 import com.focustimer.backend.repository.RoomRepository;
 import com.focustimer.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,17 +24,21 @@ public class RoomService {
     private final RoomRepository roomRepository;
     private final RoomMemberRepository roomMemberRepository;
     private final UserRepository userRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     private static final String CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private String generateCode() {
-        StringBuilder sb = new StringBuilder(6);
-        for (int i = 0; i < 6; i++) {
-            sb.append(CODE_CHARS.charAt(RANDOM.nextInt(CODE_CHARS.length())));
-        }
-        String code = sb.toString();
-        return roomRepository.findByCode(code).isPresent() ? generateCode() : code;
+        String code;
+        do {
+            StringBuilder sb = new StringBuilder(6);
+            for (int i = 0; i < 6; i++) {
+                sb.append(CODE_CHARS.charAt(RANDOM.nextInt(CODE_CHARS.length())));
+            }
+            code = sb.toString();
+        } while (roomRepository.findByCode(code).isPresent());
+        return code;
     }
 
     @Transactional
@@ -57,7 +62,9 @@ public class RoomService {
         roomMemberRepository.save(member);
         room.getMembers().add(member);
 
-        return toDTO(room);
+        RoomDTO dto = toDTO(room);
+        messagingTemplate.convertAndSend("/topic/rooms/lobby", dto);
+        return dto;
     }
 
     @Transactional
@@ -75,7 +82,10 @@ public class RoomService {
             roomMemberRepository.save(member);
             room.getMembers().add(member);
         }
-        return toDTO(room);
+        RoomDTO dto = toDTO(room);
+        messagingTemplate.convertAndSend("/topic/rooms/lobby", dto);
+        messagingTemplate.convertAndSend("/topic/rooms/" + room.getId(), dto);
+        return dto;
     }
 
     @Transactional
@@ -89,9 +99,14 @@ public class RoomService {
             room.getMembers().remove(m);
         });
 
-        if (room.getHost().getId().equals(user.getId()) && room.getMembers().isEmpty()) {
+        boolean deactivated = room.getHost().getId().equals(user.getId()) && room.getMembers().isEmpty();
+        if (deactivated) {
             room.setActive(false);
             roomRepository.save(room);
+        }
+        messagingTemplate.convertAndSend("/topic/rooms/lobby", toDTO(room));
+        if (!deactivated) {
+            messagingTemplate.convertAndSend("/topic/rooms/" + room.getId(), toDTO(room));
         }
     }
 
